@@ -1,4 +1,4 @@
-# TraceFoodChain App
+# tracealot.com
 
 A comprehensive supply chain tracking application for the coffee industry, supporting EUDR compliance and sustainable trade practices.
 

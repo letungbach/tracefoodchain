@@ -649,7 +649,7 @@ class MyApp extends StatelessWidget {
             Locale('de', ''), // German
             Locale('fr', ''), // French
           ],
-          title: 'TraceFoodChain App',
+          title: 'tracealot.com',
           theme: customTheme,
           initialRoute: '/',
           onGenerateRoute: _generateRoute);

@@ -2,7 +2,7 @@
 
 ## Überblick
 
-Die TraceFoodChain App unterstützt jetzt professionellen Datei-Upload mit Echtzeit-Fortschrittsanzeige für **Web** und **Native** Plattformen (Android/iOS).
+Die tracealot.com unterstützt jetzt professionellen Datei-Upload mit Echtzeit-Fortschrittsanzeige für **Web** und **Native** Plattformen (Android/iOS).
 
 ## Technische Details
 

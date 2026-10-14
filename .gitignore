@@ -47,7 +47,6 @@ app.*.map.json
 
 # Custom - project related files with API keys specific to permarobotics.com
 firebase.json
-/lib/firebase_options.dart
 /lib/services/tests.dart
 /lib/services/test_asset_registry.dart
 /lib/screens/geo_ids_view.dart

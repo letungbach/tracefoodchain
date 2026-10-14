@@ -1,0 +1,56 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "TFC_objects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tenantId", "order": "ASCENDING" },
+        { "fieldPath": "template.RALType", "order": "ASCENDING" },
+        { "fieldPath": "existenceStarts", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "TFC_objects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tenantId", "order": "ASCENDING" },
+        { "fieldPath": "objectState", "order": "ASCENDING" },
+        { "fieldPath": "template.RALType", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "TFC_objects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "objectState", "order": "ASCENDING" },
+        { "fieldPath": "template.RALType", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "TFC_objects",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "currentOwners", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "existenceStarts", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "TFC_methods",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tenantId", "order": "ASCENDING" },
+        { "fieldPath": "template.RALType", "order": "ASCENDING" },
+        { "fieldPath": "existenceStarts", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "TFC_methods",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "executor.identity.UID", "order": "ASCENDING" },
+        { "fieldPath": "existenceStarts", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

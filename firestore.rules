@@ -1,0 +1,140 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helper Functions
+    // ─────────────────────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserRole() {
+      return request.auth.token.role != null ? request.auth.token.role : '';
+    }
+
+    function getTenantId() {
+      return request.auth.token.tenantId != null ? request.auth.token.tenantId : 'default';
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (getUserRole() == 'SUPERADMIN' || getUserRole() == 'System Administrator');
+    }
+
+    function isOrgAdmin() {
+      return isSignedIn() && (getUserRole() == 'ORG_ADMIN' || getUserRole() == 'tfcAdmin' || isSuperAdmin());
+    }
+
+    function isAuditor() {
+      return isSignedIn() && (getUserRole() == 'AUDITOR' || isSuperAdmin());
+    }
+
+    function isSameTenant(tenant) {
+      return isSignedIn() && (getTenantId() == tenant || isSuperAdmin());
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Collection: TFC_organizations
+    // ─────────────────────────────────────────────────────────────────────────
+    match /TFC_organizations/{tenantId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || getTenantId() == tenantId || isAuditor());
+      allow write: if isSuperAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Collection: TFC_keys (Public Key Registry)
+    // ─────────────────────────────────────────────────────────────────────────
+    match /TFC_keys/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && request.resource.data.userId == userId;
+      allow delete: if isSuperAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Collection: TFC_objects (Materialized Entities)
+    // ─────────────────────────────────────────────────────────────────────────
+    match /TFC_objects/{objectId} {
+      // Public read access for active consumer products / lots or farms
+      allow read: if (resource.data.objectState == 'active' && resource.data.template.RALType in ['coffee', 'farm'])
+                  || (isSignedIn() && (
+                      isSuperAdmin() || 
+                      isAuditor() || 
+                      isSameTenant(resource.data.tenantId) ||
+                      request.auth.uid in resource.data.currentOwners
+                  ));
+
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isSameTenant(request.resource.data.tenantId) && getUserRole() in [
+          'ORG_ADMIN', 'tfcAdmin', 'REGISTRAR', 'registrar', 'registrarCoordinator', 
+          'TRADER', 'Trader', 'PROCESSOR', 'Processor', 'EXPORTER', 'Farmer'
+        ])
+      );
+
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isSameTenant(resource.data.tenantId) && getUserRole() in [
+          'ORG_ADMIN', 'tfcAdmin', 'QC_CONTROLLER', 'registrarCoordinator', 
+          'TRADER', 'Trader', 'PROCESSOR', 'Processor', 'EXPORTER'
+        ])
+      );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Collection: TFC_methods (Immutable Event Sourcing Log)
+    // ─────────────────────────────────────────────────────────────────────────
+    match /TFC_methods/{methodId} {
+      allow read: if isSignedIn() && (
+        isSuperAdmin() || 
+        isAuditor() || 
+        isSameTenant(resource.data.tenantId)
+      );
+
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          request.resource.data.executor.identity.UID == request.auth.uid &&
+          isSameTenant(request.resource.data.tenantId) &&
+          request.resource.data.digitalSignatures.size() >= 1
+        )
+      );
+
+      allow update: if false; // IMMUTABLE
+      allow delete: if false; // IMMUTABLE
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Collection: TFC_eudr_statements
+    // ─────────────────────────────────────────────────────────────────────────
+    match /TFC_eudr_statements/{statementId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || isAuditor() || isSameTenant(resource.data.tenantId));
+      allow write: if isSignedIn() && (isSuperAdmin() || (isSameTenant(request.resource.data.tenantId) && getUserRole() in ['ORG_ADMIN', 'tfcAdmin', 'EXPORTER']));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Collection: TFC_cloudlog (Diagnostics)
+    // ─────────────────────────────────────────────────────────────────────────
+    match /TFC_cloudlog/{userId} {
+      allow read: if isOwner(userId) || isSuperAdmin() || isOrgAdmin();
+      allow write: if isOwner(userId) || isSuperAdmin();
+
+      match /sessions/{sessionId} {
+        allow read: if isOwner(userId) || isSuperAdmin() || isOrgAdmin();
+        allow write: if isOwner(userId) || isSuperAdmin();
+
+        match /logs/{logId} {
+          allow read: if isOwner(userId) || isSuperAdmin() || isOrgAdmin();
+          allow create: if isOwner(userId);
+          allow update, delete: if false;
+        }
+      }
+    }
+  }
+}

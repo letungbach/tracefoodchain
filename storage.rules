@@ -1,0 +1,65 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (request.auth.token.role == 'SUPERADMIN' || request.auth.token.role == 'System Administrator');
+    }
+
+    function isSameTenant(tenantId) {
+      return isSignedIn() && (request.auth.token.tenantId == tenantId || isSuperAdmin());
+    }
+
+    function isValidImage() {
+      return request.resource.contentType.matches('image/(jpeg|png|webp|jpg)')
+             && request.resource.size <= 15 * 1024 * 1024; // 15MB max
+    }
+
+    function isValidPdf() {
+      return request.resource.contentType == 'application/pdf'
+             && request.resource.size <= 25 * 1024 * 1024; // 25MB max
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Field Inspection Photos & KYC
+    // Path: /media/{tenantId}/{userId}/{fileName}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /media/{tenantId}/{userId}/{fileName} {
+      allow read: if isSameTenant(tenantId);
+      allow write: if (isSignedIn() && request.auth.uid == userId && isSameTenant(tenantId) && isValidImage())
+                   || isSuperAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Legacy / Default Flat Media Path (Backwards Compatibility)
+    // Path: /images/{fileName} or /{fileName}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (isValidImage() || isValidPdf() || isSuperAdmin());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Due Diligence Statements & Certificates
+    // Path: /documents/{tenantId}/{documentName}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /documents/{tenantId}/{documentName} {
+      allow read: if isSameTenant(tenantId) || request.auth.token.role == 'AUDITOR';
+      allow write: if isSignedIn() && isSameTenant(tenantId) && isValidPdf()
+                   && request.auth.token.role in ['ORG_ADMIN', 'tfcAdmin', 'EXPORTER', 'SUPERADMIN'];
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Public Assets & QR Consumer Proofs
+    // Path: /public/{fileName}
+    // ─────────────────────────────────────────────────────────────────────────
+    match /public/{fileName} {
+      allow read: if true; // Unauthenticated public access
+      allow write: if isSuperAdmin();
+    }
+  }
+}

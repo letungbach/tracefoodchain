@@ -22,59 +22,157 @@ class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  bool _isSignUp = false;
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  String _getString(String key, String lang) {
+    const Map<String, Map<String, String>> strings = {
+      'signIn': {
+        'en': 'Sign In',
+        'de': 'Anmelden',
+        'es': 'Iniciar sesión',
+        'fr': 'Se connecter',
+      },
+      'createAccount': {
+        'en': 'Create Account',
+        'de': 'Konto erstellen',
+        'es': 'Crear cuenta',
+        'fr': 'Créer un compte',
+      },
+      'confirmPassword': {
+        'en': 'Confirm Password',
+        'de': 'Passwort bestätigen',
+        'es': 'Confirmar contraseña',
+        'fr': 'Confirmer le mot de passe',
+      },
+      'passwordsDoNotMatch': {
+        'en': 'Passwords do not match',
+        'de': 'Passwörter stimmen nicht überein',
+        'es': 'Las contraseñas no coinciden',
+        'fr': 'Les mots de passe ne correspondent pas',
+      },
+      'passwordTooShort': {
+        'en': 'Password must be at least 8 characters',
+        'de': 'Passwort muss mindestens 8 Zeichen lang sein',
+        'es': 'La contraseña debe tener al menos 8 caracteres',
+        'fr': 'Le mot de passe doit comporter au moins 8 caractères',
+      },
+      'dontHaveAccount': {
+        'en': "Don't have an account? Create one",
+        'de': 'Noch kein Konto? Jetzt registrieren',
+        'es': '¿No tiene una cuenta? Crear una',
+        'fr': "Vous n'avez pas de compte ? Créez-en un",
+      },
+      'alreadyHaveAccount': {
+        'en': 'Already have an account? Sign In',
+        'de': 'Bereits ein Konto? Anmelden',
+        'es': '¿Ya tiene una cuenta? Iniciar sesión',
+        'fr': 'Vous avez déjà un compte ? Se connecter',
+      },
+      'authSuccessTitle': {
+        'en': 'Signed in successfully.',
+        'de': 'Erfolgreich angemeldet.',
+        'es': 'Sesión iniciada con éxito.',
+        'fr': 'Connecté avec succès.',
+      },
+      'regSuccessTitle': {
+        'en': 'Account created successfully. Please check your email for verification.',
+        'de': 'Konto erfolgreich erstellt. Bitte überprüfen Sie Ihre E-Mails zur Bestätigung.',
+        'es': 'Cuenta creada con éxito. Por favor revise su correo para verificación.',
+        'fr': 'Compte créé avec succès. Veuillez vérifier votre boîte mail.',
+      },
+    };
+    final langKey = ['de', 'es', 'fr'].contains(lang) ? lang : 'en';
+    return strings[key]?[langKey] ?? strings[key]?['en'] ?? key;
+  }
 
   Future<void> _authenticate() async {
-    if (_formKey.currentState!.validate()) {
-      // Generate session ID here so it covers the full lifecycle incl. SplashScreen
-      if (cloudLogService.sessionId == null) {
-        cloudLogService.generateSessionId();
+    if (!_formKey.currentState!.validate()) return;
+
+    final lang = Localizations.localeOf(context).languageCode;
+
+    if (_isSignUp) {
+      if (_passwordController.text != _confirmPasswordController.text) {
+        await fshowInfoDialog(context, _getString('passwordsDoNotMatch', lang));
+        return;
       }
-      try {
-        // Try to sign in first
+      if (_passwordController.text.length < 8) {
+        await fshowInfoDialog(context, _getString('passwordTooShort', lang));
+        return;
+      }
+    }
+
+    setState(() => _isLoading = true);
+
+    // Generate session ID here so it covers the full lifecycle incl. SplashScreen
+    if (cloudLogService.sessionId == null) {
+      cloudLogService.generateSessionId();
+    }
+
+    try {
+      if (!_isSignUp) {
+        // Explicit Sign-in
         await cloudLogService.info('AuthScreen: Sign-in attempt started',
-            data: {'email': _emailController.text});
+            data: {'email': _emailController.text.trim()});
         UserCredential userCredential =
             await FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: _emailController.text,
+          email: _emailController.text.trim(),
           password: _passwordController.text,
         );
 
         await cloudLogService.info('AuthScreen: Sign-in successful',
             data: {'uid': userCredential.user!.uid});
-        await _handleSuccessfulAuth(
-            userCredential.user!, "Signed in successfully.");
-      } on FirebaseAuthException catch (e) {
-        if (e.code == 'invalid-credential') {
-          // If user is not found, try to create a new account
-          await cloudLogService.info(
-              'AuthScreen: Credential not found – attempting account creation',
-              data: {'email': _emailController.text});
-          try {
-            UserCredential userCredential =
-                await FirebaseAuth.instance.createUserWithEmailAndPassword(
-              email: _emailController.text,
-              password: _passwordController.text,
-            );
-
-            await userCredential.user?.sendEmailVerification();
-            await cloudLogService.info(
-                'AuthScreen: New account created, verification email sent',
-                data: {'uid': userCredential.user!.uid});
-            await _handleSuccessfulAuth(userCredential.user!,
-                "Account created successfully. Please check your email for verification.");
-          } on FirebaseAuthException catch (signUpError) {
-            await cloudLogService.error('AuthScreen: Account creation failed',
-                data: {
-                  'code': signUpError.code,
-                  'message': signUpError.message
-                });
-            await _handleAuthError(signUpError);
-          }
-        } else {
-          await cloudLogService.error('AuthScreen: Sign-in failed',
-              data: {'code': e.code, 'message': e.message});
-          await _handleAuthError(e);
+        if (mounted) {
+          await _handleSuccessfulAuth(
+              userCredential.user!, _getString('authSuccessTitle', lang));
         }
+      } else {
+        // Explicit Sign-up
+        await cloudLogService.info('AuthScreen: Sign-up attempt started',
+            data: {'email': _emailController.text.trim()});
+        UserCredential userCredential =
+            await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        );
+
+        await userCredential.user?.sendEmailVerification();
+        await cloudLogService.info(
+            'AuthScreen: New account created, verification email sent',
+            data: {'uid': userCredential.user!.uid});
+        if (mounted) {
+          await _handleSuccessfulAuth(userCredential.user!,
+              _getString('regSuccessTitle', lang));
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      await cloudLogService.error(
+          _isSignUp
+              ? 'AuthScreen: Account creation failed'
+              : 'AuthScreen: Sign-in failed',
+          data: {'code': e.code, 'message': e.message});
+      if (mounted) {
+        await _handleAuthError(e);
+      }
+    } catch (e) {
+      await cloudLogService.error('AuthScreen: Unexpected auth error',
+          data: {'error': e.toString()});
+      if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
+        await fshowInfoDialog(context, "${l10n.error}: ${e.toString()}");
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
   }
@@ -185,10 +283,12 @@ class _AuthScreenState extends State<AuthScreen> {
         errorMessage = l10n.userDisabledError;
         break;
       case 'wrong-password':
+      case 'invalid-credential':
+      case 'user-not-found':
         errorMessage = l10n.wrongPasswordError;
         break;
       default:
-        errorMessage = l10n.undefinedError;
+        errorMessage = e.message ?? l10n.undefinedError;
     }
     await fshowInfoDialog(context, "${l10n.error}: $errorMessage");
   }
@@ -301,18 +401,90 @@ class _AuthScreenState extends State<AuthScreen> {
                                         ),
                                     textAlign: TextAlign.center,
                                   ),
-                                  const SizedBox(height: 20),
+                                  const SizedBox(height: 12),
                                   Text(
                                     l10n.signInMessage,
                                     style: Theme.of(context)
                                         .textTheme
                                         .bodyMedium
                                         ?.copyWith(
-                                          color: Colors.black87,
+                                          color: Colors.black54,
                                         ),
                                     textAlign: TextAlign.center,
                                   ),
-                                  const SizedBox(height: 30),
+                                  const SizedBox(height: 24),
+                                  // Auth Mode Switcher (Sign In vs Create Account)
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.shade100,
+                                      borderRadius: BorderRadius.circular(25),
+                                      border: Border.all(color: Colors.grey.shade300),
+                                    ),
+                                    padding: const EdgeInsets.all(4),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              if (_isSignUp) {
+                                                setState(() {
+                                                  _isSignUp = false;
+                                                  _formKey.currentState?.reset();
+                                                });
+                                              }
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(vertical: 10),
+                                              decoration: BoxDecoration(
+                                                color: !_isSignUp
+                                                    ? Theme.of(context).primaryColor
+                                                    : Colors.transparent,
+                                                borderRadius: BorderRadius.circular(20),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: Text(
+                                                _getString('signIn', Localizations.localeOf(context).languageCode),
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: !_isSignUp ? Colors.white : Colors.black87,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              if (!_isSignUp) {
+                                                setState(() {
+                                                  _isSignUp = true;
+                                                  _formKey.currentState?.reset();
+                                                });
+                                              }
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(vertical: 10),
+                                              decoration: BoxDecoration(
+                                                color: _isSignUp
+                                                    ? Theme.of(context).primaryColor
+                                                    : Colors.transparent,
+                                                borderRadius: BorderRadius.circular(20),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: Text(
+                                                _getString('createAccount', Localizations.localeOf(context).languageCode),
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: _isSignUp ? Colors.white : Colors.black87,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
                                   Form(
                                     key: _formKey,
                                     child: Column(
@@ -321,6 +493,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                           style: const TextStyle(
                                               color: Colors.black),
                                           controller: _emailController,
+                                          keyboardType: TextInputType.emailAddress,
                                           decoration: InputDecoration(
                                             labelText: l10n.email,
                                             prefixIcon: const Icon(Icons.email),
@@ -337,11 +510,10 @@ class _AuthScreenState extends State<AuthScreen> {
                                             return null;
                                           },
                                         ),
-                                        const SizedBox(height: 20),
+                                        const SizedBox(height: 16),
                                         TextFormField(
                                           onFieldSubmitted: (value) {
-                                            // Simuliere das Drücken des Signup-Buttons, wenn Enter gedrückt wird
-                                            _authenticate();
+                                            if (!_isSignUp) _authenticate();
                                           },
                                           style: const TextStyle(
                                               color: Colors.black),
@@ -363,35 +535,98 @@ class _AuthScreenState extends State<AuthScreen> {
                                             return null;
                                           },
                                         ),
-                                        const SizedBox(height: 30),
-                                        TextButton(
-                                          onPressed: _resetPassword,
-                                          child: Text(
-                                            l10n.forgotPasswordQuestion,
+                                        if (_isSignUp) ...[
+                                          const SizedBox(height: 16),
+                                          TextFormField(
+                                            onFieldSubmitted: (value) {
+                                              _authenticate();
+                                            },
                                             style: const TextStyle(
-                                              color: Color(0xFF35DB00),
-                                              decoration:
-                                                  TextDecoration.underline,
+                                                color: Colors.black),
+                                            controller: _confirmPasswordController,
+                                            decoration: InputDecoration(
+                                              labelText: _getString('confirmPassword', Localizations.localeOf(context).languageCode),
+                                              prefixIcon: const Icon(Icons.lock_outline),
+                                              border: OutlineInputBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
                                             ),
+                                            obscureText: true,
+                                            validator: (value) {
+                                              if (value == null ||
+                                                  value.isEmpty) {
+                                                return l10n.pleaseEnterPassword;
+                                              }
+                                              if (value != _passwordController.text) {
+                                                return _getString('passwordsDoNotMatch', Localizations.localeOf(context).languageCode);
+                                              }
+                                              return null;
+                                            },
+                                          ),
+                                        ],
+                                        if (!_isSignUp) ...[
+                                          const SizedBox(height: 12),
+                                          Align(
+                                            alignment: Alignment.centerRight,
+                                            child: TextButton(
+                                              onPressed: _resetPassword,
+                                              child: Text(
+                                                l10n.forgotPasswordQuestion,
+                                                style: const TextStyle(
+                                                  color: Color(0xFF35DB00),
+                                                  decoration:
+                                                      TextDecoration.underline,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                        const SizedBox(height: 24),
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: ElevatedButton(
+                                            onPressed: _isLoading ? null : _authenticate,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  Theme.of(context).primaryColor,
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(
+                                                  vertical: 15),
+                                              textStyle:
+                                                  const TextStyle(fontSize: 18),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(30),
+                                              ),
+                                            ),
+                                            child: _isLoading
+                                                ? const SizedBox(
+                                                    height: 24,
+                                                    width: 24,
+                                                    child: CircularProgressIndicator(
+                                                      color: Colors.white,
+                                                      strokeWidth: 2.5,
+                                                    ),
+                                                  )
+                                                : Text(_getString(_isSignUp ? 'createAccount' : 'signIn', Localizations.localeOf(context).languageCode)),
                                           ),
                                         ),
-                                        const SizedBox(height: 30),
-                                        ElevatedButton(
-                                          onPressed: _authenticate,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor:
-                                                Theme.of(context).primaryColor,
-                                            foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 50, vertical: 15),
-                                            textStyle:
-                                                const TextStyle(fontSize: 18),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(30),
+                                        const SizedBox(height: 16),
+                                        TextButton(
+                                          onPressed: () {
+                                            setState(() {
+                                              _isSignUp = !_isSignUp;
+                                              _formKey.currentState?.reset();
+                                            });
+                                          },
+                                          child: Text(
+                                            _getString(_isSignUp ? 'alreadyHaveAccount' : 'dontHaveAccount', Localizations.localeOf(context).languageCode),
+                                            style: const TextStyle(
+                                              color: Colors.black87,
+                                              fontWeight: FontWeight.w600,
                                             ),
                                           ),
-                                          child: Text(l10n.signInSignUp),
                                         ),
                                       ],
                                     ),
